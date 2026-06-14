@@ -18,9 +18,9 @@ A Raspberry Pi Zero 2W reads GPS position from an L76X module and hosts a local 
 ## Features
 
 - Live coverage map — treated area fills in green as you walk
-- Automatic spreading detection — gate switch triggers start/stop, no button presses
+- Automatic spreading detection — gate switch triggers on/off, no button presses needed
+- All settings in the app — width, spacing, start/stop controlled from iPhone
 - Overlap warning — red banner when you re-enter a treated area
-- Spread width slider — set in feet, updates the swath in real time
 - Property boundary overlay — fetch from Regrid or OpenStreetMap before going outside
 - Coverage stats — acres treated, percent of property covered, session duration
 - Session export — download CSV log, track GeoJSON, and coverage polygon GeoJSON
@@ -34,23 +34,21 @@ A Raspberry Pi Zero 2W reads GPS position from an L76X module and hosts a local 
 | Raspberry Pi Zero 2 WH | ✅ Purchased |
 | 128GB microSDXC A2/U3 | ✅ Purchased |
 | Joinfworld IP67 roller lever switch (SPDT) | ✅ Purchased |
-| L76X GPS HAT | 🛒 Still needed |
-| USB power bank (20,000 mAh) | 🛒 Still needed |
-| 2× momentary buttons (width +/−) | 🛒 Still needed |
-| Weatherproof project box | 🛒 Still needed |
+| L76X GPS HAT | 🛒 Still needed (~$20) |
+| USB power bank, 20,000 mAh | 🛒 Still needed (~$25) |
+| Weatherproof project box | 🛒 Still needed (~$12) |
+
+> All settings (width, spacing, start/stop) are controlled from the iPhone app. No physical buttons needed beyond the gate switch.
 
 ## Quick wiring
 
 ```
-L76X HAT  →  stack directly on 40-pin header (no wires)
+L76X HAT  →  stack directly on 40-pin header (no wires needed)
 
-Gate switch (SPDT):
+Gate switch (SPDT) — 2 wires total:
   COM  →  Pi Pin 11 (GPIO 17)
-  NO   →  Pi Pin 9  (GND)
+  NO   →  Pi Pin 14 (GND)
   NC   →  leave disconnected
-
-Width + button:  GPIO 27 (Pin 13) → GND (Pin 14)
-Width − button:  GPIO 22 (Pin 15) → GND (Pin 14)
 ```
 
 ## Quick start

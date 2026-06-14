@@ -20,14 +20,12 @@ Tracks coverage in real time, detects overlap, and exports session data.
 | USB-A to micro-USB **data** cable | Initial setup / SSH. Must be a data cable, not charge-only | ~$6 |
 | USB power bank, 20,000 mAh, stable 5V | Field power. Get one that doesn't auto-shutoff at low draw | ~$25 |
 | L76X GPS HAT | Stacks on 40-pin header, no wiring needed | ~$20 |
-| 2× momentary push buttons (normally open) | Width + and Width − | ~$5/pack |
-| Female-to-female jumper wires | Connect buttons to Pi GPIO pins | ~$6 |
 | Small weatherproof project box | Encloses Pi + power bank for outdoor use | ~$12 |
 | Velcro straps or zip ties | Mount box to spreader frame | ~$5 |
 
-**Remaining to order: ~$80**
+**Remaining to order: ~$68**
 
-> **Note on the roller lever switch:** You have 2 — use one as the gate sensor (GPIO 17), save the second as a spare or use it as a spreading toggle mounted somewhere else on the spreader frame.
+> **No physical buttons needed for width/settings** — all controls (width, spacing, start/stop, export) are on the iPhone app. The only hardware control you need is the gate switch, which you already have.
 
 ---
 
@@ -61,15 +59,11 @@ sits against the gate/hopper. When the gate slides open, it physically presses
 the lever. Zip-tie or bolt the switch in place. The IP67 rating means it's
 waterproof, so outdoor mounting is fine.
 
-### Width +/− Buttons (simple momentary buttons)
+### Width and all other settings
 
-```
-GPIO27 (Pin 13) ──┤ BTN ├── GND (Pin 14)  → Width +1 ft per press
-GPIO22 (Pin 15) ──┤ BTN ├── GND (Pin 14)  → Width −1 ft per press
-```
-
-Each button: one leg to GPIO pin, other leg to any GND pin.
-Internal pull-up resistors are enabled — no external resistors needed.
+**No physical buttons needed.** Width, pass spacing, start/stop, and all other
+settings are controlled directly from the iPhone app. Just tap the −/+ buttons
+on the webpage.
 
 ### Full pin reference (Pi Zero 2WH, relevant pins only)
 
@@ -77,12 +71,14 @@ Internal pull-up resistors are enabled — no external resistors needed.
 Pin  1  [3.3V ]   Pin  2  [5V   ]
 Pin  3  [GPIO2]   Pin  4  [5V   ]
 Pin  5  [GPIO3]   Pin  6  [GND  ]
-Pin  7  [GPIO4]   Pin  8  [GPIO14] ← GPS UART TX (HAT auto)
-Pin  9  [GND  ]   Pin 10  [GPIO15] ← GPS UART RX (HAT auto)
-Pin 11  [GPIO17]  Pin 12  [GPIO18]  ← Gate switch COM
-Pin 13  [GPIO27]  Pin 14  [GND  ]   ← Width+ button / switch NO → GND
-Pin 15  [GPIO22]  Pin 16  [GPIO23]  ← Width− button
+Pin  7  [GPIO4]   Pin  8  [GPIO14] ← GPS UART TX (HAT, auto)
+Pin  9  [GND  ]   Pin 10  [GPIO15] ← GPS UART RX (HAT, auto)
+Pin 11  [GPIO17]  Pin 12  [GPIO18]  ← Gate switch COM  ← only wire needed
+Pin 13  [GPIO27]  Pin 14  [GND  ]      switch NO → GND (pin 14)
+...rest unused
 ```
+
+**Total wiring: 2 wires.** COM → Pin 11, NO → Pin 14. That's it.
 
 ---
 
@@ -230,11 +226,12 @@ Power back on — the GPS needs 30–60 seconds outdoors to acquire satellites.
 4. **Open Safari** → `http://192.168.4.1:5000`
 5. **Wait for GPS fix** — green dot appears, satellite count shows
 6. **Fit map** to property with the ⊊ Fit button
-7. **Tap START SESSION** when ready to begin
-8. **Toggle SPREADING ON** when you start spreading (or use the GPIO button)
-9. Walk/drive your passes — treated area fills in green
-10. **Watch for OVERLAP** warning (red banner) if you're double-covering
-11. **Toggle SPREADING OFF** for turns, refill stops, or gaps
+7. **Set spread width** in the app before starting (tap − or + next to "Width")
+8. **Tap START SESSION** when ready to begin
+9. **Open the gate** on the spreader — spreading turns ON automatically via the gate switch
+10. Walk your passes — treated area fills in green on the map
+11. **Watch for OVERLAP** warning (red banner) if you're double-covering
+12. **Close the gate** for turns, refill stops, or gaps — spreading turns OFF automatically
 12. **END SESSION** when done — exports are saved automatically
 13. **Export** via the 💾 button — download CSV and GeoJSON files
 
