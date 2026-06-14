@@ -1,0 +1,5 @@
+pyserial>=3.5
+shapely>=2.0
+folium>=0.16
+requests>=2.31
+click>=8.1
