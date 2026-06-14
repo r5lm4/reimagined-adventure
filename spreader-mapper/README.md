@@ -7,25 +7,18 @@ Tracks coverage in real time, detects overlap, and exports session data.
 
 ## Shopping List
 
-### ✅ Already purchased
 | Part | Notes |
 |------|-------|
-| **Raspberry Pi Zero 2 WH Kit** (~$48) | "WH" = pre-soldered 40-pin header — perfect, no soldering needed for the L76X HAT |
-| **128GB microSDXC A2/U3/V30** (~$33) | More than enough; A2 rating means fast random I/O which is better than minimum |
-| **Joinfworld IP67 Roller Lever Micro Switch, SPDT, 2-pack** (~$10) | Gate sensor — mounts on spreader so lever is pressed when gate opens |
+| Raspberry Pi Zero 2 WH | Pre-soldered 40-pin header — no soldering needed for the L76X HAT |
+| 128GB microSDXC A2/U3/V30 | A2-rated card recommended for reliable write speed |
+| L76X GPS HAT | Stacks directly on 40-pin header, no wiring needed |
+| Joinfworld IP67 Roller Lever Switch, SPDT | Gate sensor — mounts on spreader so lever is pressed when gate opens |
+| USB power bank, 20,000 mAh, stable 5V | Get one that doesn't auto-shutoff at low draw |
+| Small weatherproof project box | Encloses Pi + power bank for outdoor use |
+| USB-A to micro-USB data cable | Initial setup / SSH — must be a data cable, not charge-only |
+| Velcro straps or zip ties | Mount box to spreader frame |
 
-### 🛒 Still needed
-| Part | Why Needed | Approx Price |
-|------|-----------|-------------|
-| USB-A to micro-USB **data** cable | Initial setup / SSH. Must be a data cable, not charge-only | ~$6 |
-| USB power bank, 20,000 mAh, stable 5V | Field power. Get one that doesn't auto-shutoff at low draw | ~$25 |
-| L76X GPS HAT | Stacks on 40-pin header, no wiring needed | ~$20 |
-| Small weatherproof project box | Encloses Pi + power bank for outdoor use | ~$12 |
-| Velcro straps or zip ties | Mount box to spreader frame | ~$5 |
-
-**Remaining to order: ~$68**
-
-> **No physical buttons needed for width/settings** — all controls (width, spacing, start/stop, export) are on the iPhone app. The only hardware control you need is the gate switch, which you already have.
+> All settings (width, spacing, start/stop, export) are controlled from the iPhone app. No physical buttons needed beyond the gate switch.
 
 ---
 

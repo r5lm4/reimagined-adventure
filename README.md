@@ -29,14 +29,14 @@ A Raspberry Pi Zero 2W reads GPS position from an L76X module and hosts a local 
 
 ## Hardware
 
-| Part | Status |
-|------|--------|
-| Raspberry Pi Zero 2 WH | ✅ Purchased |
-| 128GB microSDXC A2/U3 | ✅ Purchased |
-| Joinfworld IP67 roller lever switch (SPDT) | ✅ Purchased |
-| L76X GPS HAT | 🛒 Still needed (~$20) |
-| USB power bank, 20,000 mAh | 🛒 Still needed (~$25) |
-| Weatherproof project box | 🛒 Still needed (~$12) |
+- Raspberry Pi Zero 2 WH
+- 128GB microSDXC A2/U3
+- L76X GPS HAT
+- Joinfworld IP67 roller lever switch, SPDT (gate sensor)
+- USB power bank, 20,000 mAh
+- Weatherproof project box
+- USB-A to micro-USB data cable
+- Velcro straps or zip ties
 
 > All settings (width, spacing, start/stop) are controlled from the iPhone app. No physical buttons needed beyond the gate switch.
 
