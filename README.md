@@ -1,51 +1,83 @@
 # Spreader GPS Mapper
 
 Track where you've treated your yard with a wheeled broadcast spreader.
-The Arduino reads your L76X GPS hat and streams coordinates to a PC.
-The Python app builds an interactive HTML map showing treated area vs. your property boundary.
+The Arduino logs GPS tracks directly to an SD card — no laptop needed outside.
+Bring the card in, run the Python app, get an interactive HTML coverage map.
 
 ---
 
-## Hardware
+## Hardware you need
 
 | Part | Notes |
 |------|-------|
-| Arduino Uno | Any clone works |
-| L76X GPS hat | UART, default 9600 baud |
-| USB cable | Data connection to PC |
+| Arduino Uno | Any clone |
+| L76X GPS hat | UART, 9600 baud |
+| SD card hat/shield | SPI, CS on pin 10 |
+| Momentary push button | Start/stop sessions |
+| LED + 220 Ω resistor | Status indicator |
+| microSD card | FAT32 formatted |
 
-### Wiring
+---
 
-The L76X hat typically stacks on top of the Uno.  
-If yours uses header pins instead:
+## Wiring
 
-| L76X pin | Arduino Uno pin |
-|----------|-----------------|
-| TX       | D4 (SoftwareSerial RX) |
-| RX       | D3 (SoftwareSerial TX) |
-| VCC      | 3.3 V or 5 V (check your hat) |
-| GND      | GND |
+### L76X GPS hat → Arduino
+
+| L76X pin | Arduino pin |
+|----------|-------------|
+| TX | D7 (SoftwareSerial RX) |
+| RX | D8 (SoftwareSerial TX, optional) |
+| VCC | 3.3 V or 5 V (check your hat's spec) |
+| GND | GND |
+
+### SD card hat → Arduino
+
+Most SD hats use the standard SPI pins — just plug it in.  
+If yours has a jumper-selectable CS pin, set it to **D10**.
+
+| SD hat pin | Arduino pin |
+|------------|-------------|
+| CS | D10 |
+| MOSI | D11 (hardware SPI) |
+| MISO | D12 (hardware SPI) |
+| SCK | D13 (hardware SPI) |
+
+### Button and LED
+
+| Component | Arduino pin |
+|-----------|-------------|
+| Button (one leg) | D2 |
+| Button (other leg) | GND |
+| LED anode (+) | D6 via 220 Ω |
+| LED cathode (−) | GND |
 
 ---
 
 ## Arduino firmware
 
-Open `arduino/gps_logger/gps_logger.ino` in the Arduino IDE and upload to the Uno.  
-No extra libraries needed beyond the built-in `SoftwareSerial`.
+Open `arduino/gps_logger/gps_logger.ino` in the Arduino IDE and upload.  
+No extra libraries needed — `SD` and `SoftwareSerial` are both built-in.
 
-**Serial commands** (send from Serial Monitor or the Python app):
+If your SD hat uses a CS pin other than 10, change `SD_CS_PIN` near the top of the sketch.
 
-| Cmd | Action |
-|-----|--------|
-| `S` | Start logging |
-| `P` | Pause logging |
-| `C` | Reset record counter |
-| `?` | Print status |
+### LED status codes
 
-**Output line format:**
-```
-$LOG,2025-06-14T15:30:00Z,40.7128000,-74.0060000,3.20
-```
+| Pattern | Meaning |
+|---------|---------|
+| Slow blink (1 s) | Waiting for GPS fix |
+| Fast blink (0.2 s) | Actively logging to SD |
+| Off | Paused / idle (fix present) |
+| Solid ON | SD card error |
+
+### Using it in the yard
+
+1. Power on, wait for the LED to switch from slow blink → fast blink (GPS fix acquired).  
+   This typically takes 30–90 seconds outdoors with a clear sky.
+2. **Press the button** to start a new session. LED goes fast-blink.
+3. Push the spreader across your yard in parallel passes.
+4. **Press the button again** to stop. The file is safely closed.
+5. You can do multiple start/stop sessions; each creates a new file: `LOG001.CSV`, `LOG002.CSV` …
+6. Power off and bring the SD card inside.
 
 ---
 
@@ -58,67 +90,71 @@ cd app
 pip install -r requirements.txt
 ```
 
-### Property boundary data
+### Property boundary (optional but recommended)
 
-The app tries three sources in order:
+The app tries two sources in order:
 
-1. **Regrid** (best accuracy) – free account at <https://regrid.com>  
-   Set your key: `export REGRID_API_KEY=your_key_here`
-
-2. **OpenStreetMap Overpass** – no key needed, good for residential neighbourhoods
-
-3. **GPS track bounding box** – automatic fallback if both APIs fail
-
----
+1. **Regrid** (best accuracy) — free account at <https://regrid.com>  
+   After signing up: `export REGRID_API_KEY=your_key_here`
+2. **OpenStreetMap Overpass** — no key needed
+3. **GPS track bounding box** — automatic fallback if both APIs fail
 
 ### Usage
 
-**Live session (record + map in one step):**
+**Map a single session:**
 ```bash
-python main.py run \
-  --port COM5 \            # Windows: COMx  |  Linux/Mac: /dev/ttyUSB0
-  --width 1.5 \            # spread width in metres (e.g. 1.5 m ≈ 5 ft)
+python main.py map \
+  --csv E:/LOG001.CSV \
+  --width 1.5 \
   --address "123 Main St, Springfield, IL"
 ```
 
-**Record only (no PC needed later for the map):**
+**Map every session on the card (one HTML file per session):**
 ```bash
-python main.py record --port /dev/ttyUSB0 --width 1.5 --out lawn.csv
+python main.py mapall \
+  --card E:/ \
+  --width 1.5 \
+  --address "123 Main St, Springfield, IL"
 ```
 
-**Generate map from a saved CSV:**
+**Merge all sessions into one cumulative map** (shows total coverage across multiple days):
 ```bash
-python main.py map --csv lawn.csv --width 1.5 --address "123 Main St, Springfield, IL"
+python main.py merge \
+  --card E:/ \
+  --width 1.5 \
+  --address "123 Main St, Springfield, IL"
 ```
 
-Walk the spreader, hit **Ctrl+C** when done. The app saves `coverage_map.html` — open it in any browser.
+On Linux/Mac, replace `E:/` with the SD card mount path (e.g. `/media/yourname/SD`).
 
 ---
 
 ## Map features
 
-- **Blue outline** – property boundary (if found)
-- **Green fill** – treated area (GPS track buffered by spread width ÷ 2)
-- **Red line** – raw GPS track
-- **Info marker** – treated area in m², property area, and % coverage
+| Layer | Description |
+|-------|-------------|
+| Blue outline | Property boundary (from Regrid or OSM) |
+| Green fill | Treated area (GPS track buffered by spread width ÷ 2) |
+| Red line | Raw GPS track |
+| Info marker | Treated m², property m², and % coverage |
 
 ---
 
 ## Spread width reference
 
-| Spreader setting | Approx. width |
-|------------------|---------------|
-| Narrow (low setting) | 1.0 – 1.5 m |
-| Medium | 1.8 – 2.4 m |
-| Wide (max setting) | 3.0 – 4.5 m |
+Measure your actual spread on pavement before your first run for accurate numbers.
 
-Measure your actual spread on a paved surface before your first run for accurate coverage numbers.
+| Typical setting | Approx. width |
+|-----------------|---------------|
+| Narrow | 1.0 – 1.5 m (3 – 5 ft) |
+| Medium | 1.8 – 2.4 m (6 – 8 ft) |
+| Wide | 3.0 – 4.5 m (10 – 15 ft) |
 
 ---
 
 ## Tips
 
-- Wait for the GPS to get a fix (solid green LED on most L76X hats) before starting.
-- Walk at a steady pace; the L76X updates at 1 Hz by default.
-- Keep overlapping passes to avoid gaps — the map shows you exactly where you've been.
-- Save each session CSV with a date in the name (`lawn_2025-06-14.csv`) to compare treatments over time.
+- Wait for the fast-blink before starting your first pass — no fix means no GPS data.
+- Keep passes overlapping slightly; the map will show any gaps.
+- Name your output files by date (`LOG001_2025-06-14_map.html`) to track coverage over time.
+- The `merge` command is great for multi-day fertilizer programs — run it each time to see cumulative coverage.
