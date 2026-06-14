@@ -1,0 +1,26 @@
+[Unit]
+Description=Spreader Mapper GPS Lawn Treatment System
+After=network.target
+Wants=network.target
+
+[Service]
+Type=simple
+User=pi
+Group=pi
+WorkingDirectory=/home/pi/spreader-mapper/backend
+ExecStart=/usr/bin/python3 /home/pi/spreader-mapper/backend/app.py
+Restart=on-failure
+RestartSec=5
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=spreader
+
+# Environment
+Environment=PYTHONUNBUFFERED=1
+Environment=PYTHONPATH=/home/pi/spreader-mapper/backend
+
+# Give the service access to GPIO and serial
+SupplementaryGroups=gpio dialout
+
+[Install]
+WantedBy=multi-user.target

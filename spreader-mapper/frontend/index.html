@@ -1,0 +1,111 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+  <meta name="theme-color" content="#1a1a1a" />
+  <title>Spreader Mapper</title>
+  <link rel="stylesheet" href="/static/css/leaflet.css" />
+  <link rel="stylesheet" href="/static/css/style.css" />
+</head>
+<body>
+
+  <!-- Top status bar -->
+  <div id="status-bar">
+    <div class="status-left">
+      <span id="gps-dot" class="dot dot-red" title="GPS status"></span>
+      <span id="gps-label">No Fix</span>
+    </div>
+    <div class="status-center">
+      <span id="sat-count">0 sats</span>
+      <span class="status-sep">|</span>
+      <span id="hdop-val">HDOP --</span>
+    </div>
+    <div class="status-right">
+      <span id="utc-time">--:--:--</span>
+    </div>
+  </div>
+
+  <!-- Overlap warning banner -->
+  <div id="overlap-warning" class="hidden">⚠ OVERLAP DETECTED</div>
+
+  <!-- No GPS overlay -->
+  <div id="no-gps-overlay" class="hidden">
+    <div class="no-gps-inner">
+      <div class="no-gps-icon">📡</div>
+      <div>Waiting for GPS fix…</div>
+      <div id="no-gps-sats" class="no-gps-sub"></div>
+    </div>
+  </div>
+
+  <!-- Map container -->
+  <div id="map"></div>
+
+  <!-- Bottom control panel -->
+  <div id="control-panel">
+
+    <!-- Row 1: Session + Pause -->
+    <div class="ctrl-row">
+      <button id="btn-session" class="btn btn-start" onclick="mapApp.toggleSession()">▶ START SESSION</button>
+      <button id="btn-pause" class="btn btn-pause" onclick="mapApp.togglePause()" disabled>⏸ PAUSE</button>
+    </div>
+
+    <!-- Row 2: Spreading toggle -->
+    <div class="ctrl-row">
+      <button id="btn-spreading" class="btn btn-spreading-off btn-wide" onclick="mapApp.toggleSpreading()">⬜ SPREADING OFF</button>
+    </div>
+
+    <!-- Row 3: Width + Spacing -->
+    <div class="ctrl-row ctrl-row-params">
+      <div class="param-group">
+        <span class="param-label">Width</span>
+        <button class="btn btn-sm" onclick="mapApp.adjustWidth(-1)">−</button>
+        <span id="width-val" class="param-val">12 ft</span>
+        <button class="btn btn-sm" onclick="mapApp.adjustWidth(1)">+</button>
+      </div>
+      <div class="param-group">
+        <span class="param-label">Spacing</span>
+        <button class="btn btn-sm" onclick="mapApp.adjustSpacing(-1)">−</button>
+        <span id="spacing-val" class="param-val">10 ft</span>
+        <button class="btn btn-sm" onclick="mapApp.adjustSpacing(1)">+</button>
+      </div>
+    </div>
+
+    <!-- Row 4: Stats -->
+    <div class="ctrl-row ctrl-row-stats">
+      <span id="stat-area">Area: 0.00 ac</span>
+      <span class="status-sep">|</span>
+      <span id="stat-coverage">0% covered</span>
+      <span class="status-sep">|</span>
+      <span id="stat-duration">00:00</span>
+    </div>
+
+    <!-- Row 5: Actions -->
+    <div class="ctrl-row">
+      <button class="btn btn-secondary" onclick="mapApp.fitBounds()">⊞ Fit</button>
+      <button class="btn btn-secondary" onclick="mapApp.toggleFollow()">⊙ Follow</button>
+      <button class="btn btn-secondary" onclick="mapApp.openExport()">💾 Export</button>
+    </div>
+
+  </div>
+
+  <!-- Export modal -->
+  <div id="export-modal" class="modal-overlay hidden" onclick="mapApp.closeExport(event)">
+    <div class="modal-card">
+      <h3>Export Session Data</h3>
+      <a class="btn btn-export" href="/api/export/csv" download>⬇ CSV Log</a>
+      <a class="btn btn-export" href="/api/export/geojson/track" download>⬇ Track GeoJSON</a>
+      <a class="btn btn-export" href="/api/export/geojson/coverage" download>⬇ Coverage GeoJSON</a>
+      <button class="btn btn-secondary" onclick="mapApp.closeExport()">Close</button>
+    </div>
+  </div>
+
+  <!-- Scripts -->
+  <script src="/static/js/leaflet.js"></script>
+  <script src="/static/js/socket.io.min.js"></script>
+  <script src="/static/js/map.js"></script>
+
+</body>
+</html>
