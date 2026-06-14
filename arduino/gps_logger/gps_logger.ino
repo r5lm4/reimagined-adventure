@@ -1,73 +1,126 @@
 /*
  * gps_logger.ino  –  Standalone SD card GPS logger for a broadcast spreader
+ *                    with 128×64 OLED property-boundary map
  *
  * Hardware connections
  * ───────────────────
  * L76X GPS hat
- *   TX  →  Arduino pin 7  (SoftwareSerial RX)
- *   RX  →  Arduino pin 8  (SoftwareSerial TX, optional)
+ *   TX  →  pin 7  (SoftwareSerial RX)
+ *   RX  →  pin 8  (SoftwareSerial TX, optional)
  *
  * SD card hat (SPI)
- *   CS   →  pin 10   (change SD_CS_PIN if your hat uses a different pin)
- *   MOSI →  pin 11   (hardware SPI, fixed)
- *   MISO →  pin 12   (hardware SPI, fixed)
- *   SCK  →  pin 13   (hardware SPI, fixed)
+ *   CS   →  pin 10  (change SD_CS_PIN below if different)
+ *   MOSI →  pin 11  (hardware SPI)
+ *   MISO →  pin 12  (hardware SPI)
+ *   SCK  →  pin 13  (hardware SPI)
  *
- * Button  →  pin 2, other leg to GND  (toggles logging on/off)
- * LED     →  pin 6 + 220 Ω to GND    (status indicator)
+ * SSD1306 OLED (I2C, 128×64)
+ *   SDA  →  A4
+ *   SCL  →  A5
+ *   VCC  →  3.3 V or 5 V
+ *   GND  →  GND
+ *
+ * Button  →  pin 2, other leg to GND  (start/stop session)
+ * LED     →  pin 6 + 220 Ω to GND    (status)
  *
  * LED status
  * ──────────
- *   Slow blink (1 s)   Waiting for GPS fix
- *   Fast blink (0.2 s) Logging (fix acquired)
- *   Solid ON            SD write error – remove and re-insert card
- *   OFF                 Paused / idle (fix present but not logging)
+ *   Slow blink (1 s)   No GPS fix
+ *   Fast blink (0.2 s) Logging
+ *   Off                Ready / paused
+ *   Solid ON           SD error
  *
- * File naming
- * ───────────
- * Each press of the button starts a new session file: LOG001.CSV, LOG002.CSV …
- * Files are plain CSV with header: timestamp,lat,lon,speed_kmh
- * Copy the entire card to your PC and run the Python app on any CSV.
+ * SD card files
+ * ─────────────
+ *   BOUNDARY.CSV  –  property boundary from Python app (lat,lon pairs)
+ *                    Put this on the card before going outside.
+ *   LOG001.CSV … –  session logs created by button press
  *
- * Libraries required (install via Arduino Library Manager)
- *   SD          – built-in (ships with Arduino IDE)
+ * OLED map
+ * ────────
+ *   The 96×64 left portion of the screen is the map area.
+ *   Dashed line = property boundary (loaded from BOUNDARY.CSV)
+ *   Filled dot  = current GPS position
+ *   Dot trail   = where you've already been this session
+ *   Right 32×64 strip = status text (fix, session #, record count)
+ *
+ * Libraries  (install via Arduino Library Manager)
+ *   Adafruit SSD1306
+ *   Adafruit GFX Library
+ *   SD          – built-in
  *   SoftwareSerial – built-in
  */
 
 #include <SoftwareSerial.h>
 #include <SD.h>
 #include <SPI.h>
+#include <Wire.h>
+#include <Adafruit_GFX.h>
+#include <Adafruit_SSD1306.h>
 
-// ── Pin assignments ───────────────────────────────────────────────────────────
-#define GPS_RX_PIN  7     // connects to L76X TX
-#define GPS_TX_PIN  8     // connects to L76X RX (can leave unconnected)
-#define SD_CS_PIN   10
-#define BTN_PIN     2
-#define LED_PIN     6
+// ── Configuration ─────────────────────────────────────────────────────────────
+#define GPS_RX_PIN      7
+#define GPS_TX_PIN      8
+#define SD_CS_PIN       10
+#define BTN_PIN         2
+#define LED_PIN         6
+#define GPS_BAUD        9600
+#define LOG_INTERVAL_MS 1000
 
-// ── Timing ────────────────────────────────────────────────────────────────────
-#define GPS_BAUD    9600
-#define LOG_INTERVAL_MS 1000   // write a fix at most once per second
+// OLED
+#define OLED_WIDTH      128
+#define OLED_HEIGHT     64
+#define OLED_ADDR       0x3C   // most common; try 0x3D if display is blank
+
+// Map viewport occupies the left 96 columns; status strip uses remaining 32.
+#define MAP_W           96
+#define MAP_H           64
+#define STATUS_X        97     // left edge of the status text strip
+
+// Memory budget: keep these small.
+// On an Uno the SSD1306 frame buffer alone uses 1 KB of the 2 KB SRAM.
+#define MAX_BOUNDARY_PTS  24   // property outline points (scaled to pixels)
+#define MAX_TRACK_PTS     48   // rolling trail of where you've walked
 
 // ── Globals ───────────────────────────────────────────────────────────────────
-SoftwareSerial gpsSerial(GPS_RX_PIN, GPS_TX_PIN);
+SoftwareSerial          gpsSerial(GPS_RX_PIN, GPS_TX_PIN);
+Adafruit_SSD1306        oled(OLED_WIDTH, OLED_HEIGHT, &Wire, -1);
 
-bool     logging      = false;
-bool     hasFix       = false;
-bool     sdOK         = false;
-uint16_t sessionNum   = 0;
-uint32_t recordCount  = 0;
-uint32_t lastLogMs    = 0;
+bool      logging        = false;
+bool      hasFix         = false;
+bool      sdOK           = false;
+bool      oledOK         = false;
+uint16_t  sessionNum     = 0;
+uint32_t  recordCount    = 0;
+uint32_t  lastLogMs      = 0;
+uint32_t  lastDisplayMs  = 0;
+#define   DISPLAY_INTERVAL_MS 500
 
-char     nmea[100];
-uint8_t  nmeaIdx      = 0;
-
-File     logFile;
+char      nmea[100];
+uint8_t   nmeaIdx        = 0;
+File      logFile;
 
 // Button debounce
-bool     lastBtnState  = HIGH;
-uint32_t lastDebounceMs = 0;
-#define  DEBOUNCE_MS    50
+bool      lastBtnState   = HIGH;
+uint32_t  lastDebounceMs = 0;
+#define   DEBOUNCE_MS    50
+
+// ── Map data ──────────────────────────────────────────────────────────────────
+// Property boundary stored as pixel coords after scaling.
+uint8_t   bndX[MAX_BOUNDARY_PTS], bndY[MAX_BOUNDARY_PTS];
+uint8_t   bndCount = 0;
+
+// Rolling track trail (pixel coords, circular buffer).
+uint8_t   trailX[MAX_TRACK_PTS], trailY[MAX_TRACK_PTS];
+uint8_t   trailHead = 0, trailCount = 0;
+
+// Bounding box in degrees, set when BOUNDARY.CSV is loaded.
+// Used to project lat/lon to map pixel coords.
+double    mapMinLat, mapMaxLat, mapMinLon, mapMaxLon;
+bool      mapReady = false;
+
+// Current position in pixel coords.
+int8_t    curPX = -1, curPY = -1;
 
 // ── NMEA helpers ──────────────────────────────────────────────────────────────
 
@@ -102,7 +155,7 @@ bool nmeaChecksum(const char *s) {
   return calc == (uint8_t)strtol(&s[i + 1], nullptr, 16);
 }
 
-// ── Fix struct and parser ────────────────────────────────────────────────────
+// ── Fix struct ────────────────────────────────────────────────────────────────
 
 struct Fix {
   bool   valid;
@@ -143,16 +196,99 @@ Fix parseGPRMC(const char *s) {
   return f;
 }
 
-// ── SD helpers ────────────────────────────────────────────────────────────────
+// ── Coordinate → pixel projection ─────────────────────────────────────────────
 
-// Find the next unused LOGxxx.CSV filename.
+// Project a lat/lon to MAP_W × MAP_H pixel space.
+// Returns false if the point is outside the bounding box.
+bool project(double lat, double lon, uint8_t &px, uint8_t &py) {
+  if (!mapReady) return false;
+  double latRange = mapMaxLat - mapMinLat;
+  double lonRange = mapMaxLon - mapMinLon;
+  if (latRange == 0 || lonRange == 0) return false;
+
+  int16_t x = (int16_t)((lon - mapMinLon) / lonRange * (MAP_W - 1));
+  // Latitude increases upward on Earth, downward on screen.
+  int16_t y = (int16_t)((mapMaxLat - lat) / latRange * (MAP_H - 1));
+
+  if (x < 0 || x >= MAP_W || y < 0 || y >= MAP_H) return false;
+  px = (uint8_t)x;
+  py = (uint8_t)y;
+  return true;
+}
+
+// ── Boundary loader ───────────────────────────────────────────────────────────
+
+void loadBoundary() {
+  if (!sdOK || !SD.exists("BOUNDARY.CSV")) {
+    Serial.println(F("BOUNDARY.CSV not found"));
+    return;
+  }
+
+  File f = SD.open("BOUNDARY.CSV");
+  if (!f) return;
+
+  // First pass: find bounding box and read raw lat/lon into temporary arrays.
+  // We use two passes to avoid needing a double-sized buffer.
+  // Instead, read once to get bbox, then re-read to project.
+  double lats[MAX_BOUNDARY_PTS], lons[MAX_BOUNDARY_PTS];
+  uint8_t count = 0;
+  mapMinLat =  90.0; mapMaxLat = -90.0;
+  mapMinLon = 180.0; mapMaxLon = -180.0;
+
+  char line[32];
+  // Skip header
+  f.readBytesUntil('\n', line, sizeof(line));
+
+  while (f.available() && count < MAX_BOUNDARY_PTS) {
+    uint8_t len = f.readBytesUntil('\n', line, sizeof(line) - 1);
+    line[len] = '\0';
+    char *comma = strchr(line, ',');
+    if (!comma) continue;
+    *comma = '\0';
+    double lat = atof(line);
+    double lon = atof(comma + 1);
+    if (lat == 0.0 && lon == 0.0) continue;
+    lats[count] = lat;
+    lons[count] = lon;
+    if (lat < mapMinLat) mapMinLat = lat;
+    if (lat > mapMaxLat) mapMaxLat = lat;
+    if (lon < mapMinLon) mapMinLon = lon;
+    if (lon > mapMaxLon) mapMaxLon = lon;
+    count++;
+  }
+  f.close();
+
+  if (count < 3) { Serial.println(F("BOUNDARY.CSV too short")); return; }
+
+  // Add a small margin (≈5 m) so the boundary doesn't touch the screen edge.
+  double latM = (mapMaxLat - mapMinLat) * 0.08;
+  double lonM = (mapMaxLon - mapMinLon) * 0.08;
+  mapMinLat -= latM; mapMaxLat += latM;
+  mapMinLon -= lonM; mapMaxLon += lonM;
+  mapReady = true;
+
+  // Second pass: project to pixel coords.
+  bndCount = 0;
+  for (uint8_t i = 0; i < count; i++) {
+    uint8_t px, py;
+    if (project(lats[i], lons[i], px, py))
+      { bndX[bndCount] = px; bndY[bndCount] = py; bndCount++; }
+  }
+
+  Serial.print(F("Boundary loaded: "));
+  Serial.print(bndCount);
+  Serial.println(F(" points"));
+}
+
+// ── SD session helpers ────────────────────────────────────────────────────────
+
 uint16_t nextSessionNumber() {
   for (uint16_t n = 1; n <= 999; n++) {
     char name[13];
     snprintf(name, sizeof(name), "LOG%03u.CSV", n);
     if (!SD.exists(name)) return n;
   }
-  return 999; // wrap-around; existing file will be appended
+  return 999;
 }
 
 bool openSession(uint16_t n) {
@@ -160,48 +296,131 @@ bool openSession(uint16_t n) {
   snprintf(name, sizeof(name), "LOG%03u.CSV", n);
   logFile = SD.open(name, FILE_WRITE);
   if (!logFile) return false;
-  // Write CSV header only for a new (empty) file
   if (logFile.size() == 0)
     logFile.println(F("timestamp,lat,lon,speed_kmh"));
   logFile.flush();
   return true;
 }
 
-// ── LED helpers ───────────────────────────────────────────────────────────────
+// ── OLED rendering ────────────────────────────────────────────────────────────
 
-void updateLED() {
-  if (!sdOK) {
-    // SD error – solid ON
-    digitalWrite(LED_PIN, HIGH);
-    return;
+void drawMap() {
+  if (!oledOK) return;
+  oled.clearDisplay();
+
+  // ── Map area (left 96 px) ──────────────────────────────────────────────────
+
+  if (mapReady && bndCount >= 2) {
+    // Draw property boundary as a dashed polygon.
+    for (uint8_t i = 0; i < bndCount; i++) {
+      uint8_t j = (i + 1) % bndCount;
+      int16_t dx = (int16_t)bndX[j] - bndX[i];
+      int16_t dy = (int16_t)bndY[j] - bndY[i];
+      // Simple dash: draw every other segment of 3 px.
+      float len = sqrt((float)dx*dx + (float)dy*dy);
+      if (len < 1) continue;
+      float nx = dx / len, ny = dy / len;
+      float t = 0;
+      bool draw = true;
+      while (t < len) {
+        float t2 = t + 3.0f;
+        if (t2 > len) t2 = len;
+        if (draw) {
+          oled.drawLine(
+            bndX[i] + (int16_t)(t  * nx),
+            bndY[i] + (int16_t)(t  * ny),
+            bndX[i] + (int16_t)(t2 * nx),
+            bndY[i] + (int16_t)(t2 * ny),
+            SSD1306_WHITE);
+        }
+        t = t2 + 3.0f;
+        draw = !draw;
+      }
+    }
+  } else if (!mapReady) {
+    // No boundary file – show a placeholder frame.
+    oled.drawRect(1, 1, MAP_W - 2, MAP_H - 2, SSD1306_WHITE);
+    oled.setCursor(4, 28);
+    oled.setTextSize(1);
+    oled.print(F("No BOUNDARY"));
+    oled.setCursor(4, 38);
+    oled.print(F(".CSV on card"));
   }
-  uint32_t t = millis();
-  if (!hasFix) {
-    // Slow blink: 500 ms on / 500 ms off
-    digitalWrite(LED_PIN, (t % 1000) < 500 ? HIGH : LOW);
-  } else if (logging) {
-    // Fast blink: 100 ms on / 100 ms off
-    digitalWrite(LED_PIN, (t % 200) < 100 ? HIGH : LOW);
-  } else {
-    digitalWrite(LED_PIN, LOW);
+
+  // Track trail dots.
+  for (uint8_t i = 0; i < trailCount; i++) {
+    oled.drawPixel(trailX[i], trailY[i], SSD1306_WHITE);
   }
+
+  // Current position: filled 3×3 square.
+  if (curPX >= 0) {
+    oled.fillRect(curPX - 1, curPY - 1, 3, 3, SSD1306_WHITE);
+  }
+
+  // Divider between map and status strip.
+  oled.drawFastVLine(MAP_W, 0, MAP_H, SSD1306_WHITE);
+
+  // ── Status strip (right 31 px) ────────────────────────────────────────────
+  oled.setTextSize(1);
+  oled.setTextColor(SSD1306_WHITE);
+
+  // Fix indicator.
+  oled.setCursor(STATUS_X, 0);
+  oled.print(hasFix ? F("FIX") : F("---"));
+
+  // Session number.
+  oled.setCursor(STATUS_X, 10);
+  oled.print(F("S"));
+  if (logging)
+    oled.print(sessionNum);
+  else
+    oled.print(F("-"));
+
+  // Record count (up to 4 digits).
+  oled.setCursor(STATUS_X, 20);
+  if (recordCount < 10000)
+    oled.print(recordCount);
+  else
+    oled.print(F("999+"));
+
+  // Logging / ready indicator.
+  oled.setCursor(STATUS_X, 34);
+  if (!sdOK)        oled.print(F("SDERR"));
+  else if (logging) oled.print(F("LOG"));
+  else if (hasFix)  oled.print(F("RDY"));
+  else              oled.print(F("WAIT"));
+
+  // Blink a dot while logging so you know the display is live.
+  if (logging && (millis() % 1000) < 500) {
+    oled.fillCircle(STATUS_X + 12, 56, 3, SSD1306_WHITE);
+  }
+
+  oled.display();
 }
 
-// ── Button handling ───────────────────────────────────────────────────────────
+// ── LED ───────────────────────────────────────────────────────────────────────
+
+void updateLED() {
+  if (!sdOK) { digitalWrite(LED_PIN, HIGH); return; }
+  uint32_t t = millis();
+  if (!hasFix)       digitalWrite(LED_PIN, (t % 1000) < 500  ? HIGH : LOW);
+  else if (logging)  digitalWrite(LED_PIN, (t % 200)  < 100  ? HIGH : LOW);
+  else               digitalWrite(LED_PIN, LOW);
+}
+
+// ── Button ────────────────────────────────────────────────────────────────────
 
 void handleButton() {
   bool state = digitalRead(BTN_PIN);
   if (state != lastBtnState) lastDebounceMs = millis();
   if ((millis() - lastDebounceMs) > DEBOUNCE_MS && state == LOW && lastBtnState == HIGH) {
-    // Falling edge after debounce = button pressed
     if (!logging) {
-      sessionNum = nextSessionNumber();
+      sessionNum  = nextSessionNumber();
       recordCount = 0;
-      if (openSession(sessionNum)) {
-        logging = true;
-      } else {
-        sdOK = false; // SD error
-      }
+      trailHead   = 0;
+      trailCount  = 0;
+      if (openSession(sessionNum)) logging = true;
+      else sdOK = false;
     } else {
       logging = false;
       if (logFile) { logFile.flush(); logFile.close(); }
@@ -217,24 +436,55 @@ void setup() {
   pinMode(BTN_PIN, INPUT_PULLUP);
   pinMode(LED_PIN, OUTPUT);
 
-  gpsSerial.begin(GPS_BAUD);
-
-  if (!SD.begin(SD_CS_PIN)) {
-    Serial.println(F("SD init failed! Check card and CS pin."));
-    sdOK = false;
+  // OLED init
+  if (oled.begin(SSD1306_SWITCHCAPVCC, OLED_ADDR)) {
+    oledOK = true;
+    oled.clearDisplay();
+    oled.setTextSize(1);
+    oled.setTextColor(SSD1306_WHITE);
+    oled.setCursor(0, 0);
+    oled.println(F("Spreader Mapper"));
+    oled.println(F("Starting..."));
+    oled.display();
   } else {
-    Serial.println(F("SD ready."));
-    sdOK = true;
+    Serial.println(F("OLED init failed"));
   }
 
-  Serial.println(F("Press button to start/stop a session."));
+  gpsSerial.begin(GPS_BAUD);
+
+  // SD init
+  if (!SD.begin(SD_CS_PIN)) {
+    Serial.println(F("SD init failed"));
+    sdOK = false;
+    if (oledOK) {
+      oled.setCursor(0, 20);
+      oled.println(F("SD FAILED!"));
+      oled.display();
+    }
+  } else {
+    sdOK = true;
+    Serial.println(F("SD OK"));
+    loadBoundary();
+  }
+
+  if (oledOK) {
+    delay(1000);
+    drawMap();
+  }
+  Serial.println(F("Ready. Press button to start session."));
 }
 
 void loop() {
   handleButton();
   updateLED();
 
-  // Read one GPS character per loop iteration
+  // Refresh display periodically (not every loop – saves time for GPS reading).
+  if (millis() - lastDisplayMs >= DISPLAY_INTERVAL_MS) {
+    lastDisplayMs = millis();
+    drawMap();
+  }
+
+  // GPS character reader.
   if (gpsSerial.available()) {
     char c = gpsSerial.read();
     if (c == '\r') return;
@@ -246,34 +496,35 @@ void loop() {
       if (fix.valid) {
         hasFix = true;
 
+        // Update map position.
+        uint8_t px, py;
+        if (project(fix.lat, fix.lon, px, py)) {
+          curPX = px;
+          curPY = py;
+          // Add to trail buffer.
+          if (logging) {
+            trailX[trailHead] = px;
+            trailY[trailHead] = py;
+            trailHead = (trailHead + 1) % MAX_TRACK_PTS;
+            if (trailCount < MAX_TRACK_PTS) trailCount++;
+          }
+        }
+
+        // Log to SD.
         if (logging && sdOK && (millis() - lastLogMs >= LOG_INTERVAL_MS)) {
           lastLogMs = millis();
+          if (!logFile && !openSession(sessionNum)) { sdOK = false; return; }
 
-          if (!logFile) {
-            // Re-open if closed unexpectedly
-            if (!openSession(sessionNum)) { sdOK = false; return; }
-          }
-
-          logFile.print(fix.timestamp);
-          logFile.print(',');
-          logFile.print(fix.lat, 7);
-          logFile.print(',');
-          logFile.print(fix.lon, 7);
-          logFile.print(',');
+          logFile.print(fix.timestamp); logFile.print(',');
+          logFile.print(fix.lat, 7);   logFile.print(',');
+          logFile.print(fix.lon, 7);   logFile.print(',');
           logFile.println(fix.speed_kmh, 2);
-          logFile.flush();   // flush every record so data survives power loss
-
+          logFile.flush();
           recordCount++;
 
-          // Mirror to USB serial so you can confirm it's working
-          Serial.print(F("LOG "));
-          Serial.print(recordCount);
-          Serial.print(F(" | "));
-          Serial.print(fix.timestamp);
-          Serial.print(F(" | "));
-          Serial.print(fix.lat, 6);
-          Serial.print(F(", "));
-          Serial.println(fix.lon, 6);
+          Serial.print(F("LOG ")); Serial.print(recordCount);
+          Serial.print(F(" | ")); Serial.print(fix.lat, 6);
+          Serial.print(F(", ")); Serial.println(fix.lon, 6);
         }
       }
     } else if (nmeaIdx < sizeof(nmea) - 1) {

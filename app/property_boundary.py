@@ -118,6 +118,33 @@ out geom;
         return None
 
 
+# ── Polygon simplification ───────────────────────────────────────────────────
+
+def simplify_polygon(poly: Polygon, max_pts: int) -> list:
+    """
+    Reduce a polygon to at most max_pts exterior coordinate pairs.
+    Uses Shapely's Douglas-Peucker simplification, increasing tolerance
+    until the point count fits. Returns list of (lon, lat) tuples.
+    """
+    coords = list(poly.exterior.coords)
+    if len(coords) <= max_pts:
+        return coords
+
+    tolerance = 0.000005
+    while len(coords) > max_pts and tolerance < 0.01:
+        simplified = poly.simplify(tolerance, preserve_topology=True)
+        coords = list(simplified.exterior.coords)
+        tolerance *= 2
+
+    # Hard cap: evenly subsample if simplification isn't enough.
+    if len(coords) > max_pts:
+        step = len(coords) / max_pts
+        coords = [coords[int(i * step)] for i in range(max_pts)]
+        coords.append(coords[0])  # close the ring
+
+    return coords
+
+
 # ── helpers ───────────────────────────────────────────────────────────────────
 
 def _to_polygon(geom) -> Polygon | None:
