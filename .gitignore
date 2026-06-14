@@ -1,0 +1,20 @@
+# Python
+.venv/
+__pycache__/
+*.pyc
+*.pyo
+*.egg-info/
+
+# Downloaded frontend libraries (fetched by run_dev.sh / install.sh)
+spreader-mapper/frontend/js/leaflet.js
+spreader-mapper/frontend/js/socket.io.min.js
+spreader-mapper/frontend/css/leaflet.css
+spreader-mapper/frontend/css/images/
+
+# Session data and exports
+spreader-mapper/backend/data/sessions/
+spreader-mapper/backend/data/boundaries/
+
+# OS
+.DS_Store
+Thumbs.db
