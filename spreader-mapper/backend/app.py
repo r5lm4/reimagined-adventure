@@ -66,7 +66,12 @@ try:
     import RPi.GPIO as GPIO
 
     GPIO.setmode(GPIO.BCM)
-    # GPIO 17: spreading toggle, 27: width+, 22: width-
+    # GPIO 17: gate/spreading sensor (Joinfworld IP67 roller lever switch)
+    #   Wire: switch COM → GPIO 17 pin, switch NO → GND, NC unused.
+    #   Internal pullup keeps pin HIGH when gate is closed (lever not pressed).
+    #   When spreader gate opens, lever is pressed, NO closes → pin goes LOW → spreading ON.
+    # GPIO 27: width+ momentary button (COM → GPIO 27, other leg → GND)
+    # GPIO 22: width- momentary button (COM → GPIO 22, other leg → GND)
     for pin in (17, 27, 22):
         GPIO.setup(pin, GPIO.IN, pull_up_down=GPIO.PUD_UP)
     GPIO_AVAILABLE = True
@@ -74,8 +79,8 @@ try:
 except Exception as _gpio_err:
     logger.info(f"GPIO: not available ({_gpio_err}), running without hardware buttons")
 
-# Button state tracking (for edge detection)
-_gpio_state = {17: True, 27: True, 22: True}  # True = not pressed (active LOW)
+# Edge-detection state for width buttons only (17 is level-based, not edge-based)
+_gpio_state = {27: True, 22: True}  # True = not pressed (active LOW)
 
 # ---------------------------------------------------------------------------
 # Application state
@@ -128,30 +133,35 @@ def _background_loop():
 
         fix = gps_module.get_fix()
 
-        # GPIO polling (edge detection)
+        # GPIO polling
         if GPIO_AVAILABLE:
             try:
                 import RPi.GPIO as GPIO
 
-                # Spreading toggle (GPIO 17) - falling edge
-                current_17 = GPIO.input(17)
-                if not current_17 and _gpio_state[17]:  # pressed
-                    with _state_lock:
-                        _spreading = not _spreading
-                    logger.info(f"GPIO: spreading toggled to {_spreading}")
-                _gpio_state[17] = current_17
+                # Gate sensor (GPIO 17) — LEVEL based, not edge.
+                # The Joinfworld IP67 roller lever switch is mounted on the spreader
+                # so the lever is pressed when the gate/hopper is open.
+                # LOW = lever pressed = gate open = spreading ON.
+                # HIGH = lever released = gate closed = spreading OFF.
+                # Web UI can still override spreading; hardware takes priority when
+                # the pin reads LOW (gate physically open overrides web "OFF").
+                gate_open = not GPIO.input(17)   # LOW = open
+                with _state_lock:
+                    if gate_open != _spreading:
+                        _spreading = gate_open
+                        logger.info(f"GPIO gate sensor: spreading -> {_spreading}")
 
-                # Width+ (GPIO 27)
+                # Width+ button (GPIO 27) — edge detection
                 current_27 = GPIO.input(27)
-                if not current_27 and _gpio_state[27]:
+                if not current_27 and _gpio_state[27]:  # falling edge
                     with _state_lock:
                         _spread_width_ft = min(24.0, _spread_width_ft + 1.0)
                     logger.info(f"GPIO: width+ -> {_spread_width_ft} ft")
                 _gpio_state[27] = current_27
 
-                # Width- (GPIO 22)
+                # Width- button (GPIO 22) — edge detection
                 current_22 = GPIO.input(22)
-                if not current_22 and _gpio_state[22]:
+                if not current_22 and _gpio_state[22]:  # falling edge
                     with _state_lock:
                         _spread_width_ft = max(4.0, _spread_width_ft - 1.0)
                     logger.info(f"GPIO: width- -> {_spread_width_ft} ft")

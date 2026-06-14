@@ -7,56 +7,81 @@ Tracks coverage in real time, detects overlap, and exports session data.
 
 ## Shopping List
 
+### ✅ Already purchased
+| Part | Notes |
+|------|-------|
+| **Raspberry Pi Zero 2 WH Kit** (~$48) | "WH" = pre-soldered 40-pin header — perfect, no soldering needed for the L76X HAT |
+| **128GB microSDXC A2/U3/V30** (~$33) | More than enough; A2 rating means fast random I/O which is better than minimum |
+| **Joinfworld IP67 Roller Lever Micro Switch, SPDT, 2-pack** (~$10) | Gate sensor — mounts on spreader so lever is pressed when gate opens |
+
+### 🛒 Still needed
 | Part | Why Needed | Approx Price |
 |------|-----------|-------------|
-| Raspberry Pi Zero 2W | Main computer. Quad-core 1GHz, runs Flask + Shapely comfortably | ~$15 |
-| 32GB microSD card (Class 10 / A1) | OS + data storage. Class 10 required for reliable write speed | ~$8 |
-| Pi Zero case with GPIO clearance | Protects the Pi; choose one that allows header access if using buttons | ~$8 |
-| USB-A to micro-USB data cable | Initial setup / SSH connection from PC | ~$5 |
-| MicroUSB power adapter (5V 2.5A) | Bench power during initial setup | ~$10 |
-| 20,000 mAh USB power bank (5V stable) | Field power. Must provide stable 5V/1A+ — cheap banks can brown out the Pi under load | ~$25 |
-| Waveshare L76X GPS HAT | Stacks directly on 40-pin header, uses hardware UART. Pre-tuned for fast fix | ~$20 |
-| 3× momentary push buttons (normally open) | Width +, Width −, Spreading toggle (optional hardware controls) | ~$5/pack |
-| Female-to-female jumper wires | Connect buttons to GPIO header pins | ~$6 |
-| Small breadboard | Prototype button connections before soldering | ~$4 |
+| USB-A to micro-USB **data** cable | Initial setup / SSH. Must be a data cable, not charge-only | ~$6 |
+| USB power bank, 20,000 mAh, stable 5V | Field power. Get one that doesn't auto-shutoff at low draw | ~$25 |
+| L76X GPS HAT | Stacks on 40-pin header, no wiring needed | ~$20 |
+| 2× momentary push buttons (normally open) | Width + and Width − | ~$5/pack |
+| Female-to-female jumper wires | Connect buttons to Pi GPIO pins | ~$6 |
 | Small weatherproof project box | Encloses Pi + power bank for outdoor use | ~$12 |
-| Velcro straps or zip ties | Mount the box to spreader frame | ~$5 |
-| *Optional:* Rotary encoder | More intuitive width adjustment than +/− buttons | ~$8 |
-| *Optional:* 3-position toggle switch | Hardware spreading ON / OFF / PAUSE | ~$8 |
+| Velcro straps or zip ties | Mount box to spreader frame | ~$5 |
 
-**Total: approximately $100–130 for a complete build.**
+**Remaining to order: ~$80**
+
+> **Note on the roller lever switch:** You have 2 — use one as the gate sensor (GPIO 17), save the second as a spare or use it as a spreading toggle mounted somewhere else on the spreader frame.
 
 ---
 
 ## Wiring Diagram
 
-```
-Raspberry Pi Zero 2W — 40-pin GPIO Header
-(Left column = odd pins, right column = even pins)
+### L76X GPS HAT
+Just stack it on the Pi Zero 2WH's 40-pin header. No wires needed.
+The HAT uses UART on GPIO 14/15, which appears as `/dev/serial0`.
 
-Pin 1  [3.3V  ] ─── [5V    ] Pin 2
-Pin 3  [GPIO2 ] ─── [5V    ] Pin 4
-Pin 5  [GPIO3 ] ─── [GND   ] Pin 6
-Pin 7  [GPIO4 ] ─── [GPIO14] Pin 8  ← GPS TX (L76X HAT: connects automatically)
-Pin 9  [GND   ] ─── [GPIO15] Pin 10 ← GPS RX (L76X HAT: connects automatically)
-Pin 11 [GPIO17] ─── [GPIO18] Pin 12   ← Spreading toggle button → GND (pin 9)
-Pin 13 [GPIO27] ─── [GND   ] Pin 14   ← Width+ button → GND (pin 14)
-Pin 15 [GPIO22] ─── [GPIO23] Pin 16   ← Width− button → GND (pin 9 or 14)
-...
-```
+### Joinfworld IP67 Roller Lever Switch → Pi (Gate Sensor)
 
-**L76X GPS HAT:** Simply stack onto the 40-pin header. The HAT uses UART on
-GPIO14 (TX) and GPIO15 (RX), which become `/dev/serial0` after enabling UART.
-No separate wiring needed for GPS.
-
-**Buttons:** Each button connects between the listed GPIO pin and any GND pin.
-The software uses internal pull-up resistors, so the button press pulls the
-pin LOW (active LOW logic). No external resistors required.
+The switch has 3 pre-wired terminals. Only 2 are used:
 
 ```
-GPIO17 (Pin 11) ──┤ BTN ├── GND (Pin 9)   → Spreading ON/OFF toggle
-GPIO27 (Pin 13) ──┤ BTN ├── GND (Pin 14)  → Width + (increases spread width 1 ft)
-GPIO22 (Pin 15) ──┤ BTN ├── GND (Pin 14)  → Width − (decreases spread width 1 ft)
+Switch terminal  →  Connect to
+─────────────────────────────
+COM  (common)    →  Pi GPIO 17 (Pin 11)
+NO   (normally   →  Pi GND    (Pin 9 or 14)
+     open)
+NC   (normally   →  Leave disconnected
+     closed)
+```
+
+**How it works:** Pi has internal pull-up on GPIO 17 (reads HIGH when switch open).
+When the spreader gate opens and presses the lever, NO closes → pin goes LOW →
+software automatically sets spreading = ON. Gate closes → lever releases → HIGH → spreading = OFF.
+**No manual button press needed — it's automatic.**
+
+**Mounting:** Attach the switch body to the spreader frame so the roller lever
+sits against the gate/hopper. When the gate slides open, it physically presses
+the lever. Zip-tie or bolt the switch in place. The IP67 rating means it's
+waterproof, so outdoor mounting is fine.
+
+### Width +/− Buttons (simple momentary buttons)
+
+```
+GPIO27 (Pin 13) ──┤ BTN ├── GND (Pin 14)  → Width +1 ft per press
+GPIO22 (Pin 15) ──┤ BTN ├── GND (Pin 14)  → Width −1 ft per press
+```
+
+Each button: one leg to GPIO pin, other leg to any GND pin.
+Internal pull-up resistors are enabled — no external resistors needed.
+
+### Full pin reference (Pi Zero 2WH, relevant pins only)
+
+```
+Pin  1  [3.3V ]   Pin  2  [5V   ]
+Pin  3  [GPIO2]   Pin  4  [5V   ]
+Pin  5  [GPIO3]   Pin  6  [GND  ]
+Pin  7  [GPIO4]   Pin  8  [GPIO14] ← GPS UART TX (HAT auto)
+Pin  9  [GND  ]   Pin 10  [GPIO15] ← GPS UART RX (HAT auto)
+Pin 11  [GPIO17]  Pin 12  [GPIO18]  ← Gate switch COM
+Pin 13  [GPIO27]  Pin 14  [GND  ]   ← Width+ button / switch NO → GND
+Pin 15  [GPIO22]  Pin 16  [GPIO23]  ← Width− button
 ```
 
 ---
