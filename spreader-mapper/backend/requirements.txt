@@ -1,0 +1,6 @@
+flask>=3.0
+flask-socketio>=5.3
+pyserial>=3.5
+shapely>=2.0
+pyproj>=3.6
+requests>=2.31
