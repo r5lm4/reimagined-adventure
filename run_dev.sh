@@ -29,11 +29,15 @@ fi
 
 PYTHON=python3
 
-# Create virtualenv if it doesn't exist
-VENV="$SCRIPT_DIR/.venv"
+# Create virtualenv in WSL home dir to avoid Windows filesystem symlink issues
+# (venv creation fails on /mnt/ paths in WSL)
+VENV="$HOME/.spreader-venv"
 if [ ! -d "$VENV" ]; then
-    echo "Creating virtual environment..."
-    $PYTHON -m venv "$VENV"
+    echo "Creating virtual environment in $VENV ..."
+    $PYTHON -m venv "$VENV" || {
+        echo "ERROR: venv creation failed. Try: sudo apt install python3-venv"
+        exit 1
+    }
 fi
 
 source "$VENV/bin/activate"
