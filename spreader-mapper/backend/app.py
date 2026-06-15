@@ -154,6 +154,7 @@ def _background_loop():
             width_ft = _spread_width_ft
 
         if sess is not None and not paused and fix.get("valid", False):
+            sess.spread_width_ft = width_ft  # keep session in sync with current UI value
             result = sess.add_fix(fix, spreading)
             with _state_lock:
                 _last_swath_geojson = result.get("new_swath_geojson")
