@@ -159,18 +159,19 @@ const mapApp = (() => {
 
     const latlng = [pos.lat, pos.lon];
 
-    // Width band — circle showing current spread width (radius = half width)
-    const bandRadiusM = currentWidthFt * 0.3048 / 2;
+    // Width band — pixel-radius ring that scales with spread width so it's
+    // always visible regardless of zoom level (widthFt * 1.8 px, min 18px)
+    const bandPx = Math.max(18, Math.round(currentWidthFt * 1.8));
     if (widthBand) {
       widthBand.setLatLng(latlng);
-      widthBand.setRadius(bandRadiusM);
+      widthBand.setRadius(bandPx);
     } else {
-      widthBand = L.circle(latlng, {
-        radius: bandRadiusM,
+      widthBand = L.circleMarker(latlng, {
+        radius: bandPx,
         fillColor: '#ffeb3b',
-        fillOpacity: 0.35,
+        fillOpacity: 0.25,
         color: '#f57f17',
-        weight: 2,
+        weight: 3,
         interactive: false,
       }).addTo(map);
     }
@@ -415,7 +416,7 @@ const mapApp = (() => {
     document.getElementById('width-val').textContent = `${widthFt} ft`;
     document.getElementById('spacing-val').textContent = `${spacingFt} ft`;
     if (widthBand) {
-      widthBand.setRadius(widthFt * 0.3048 / 2);
+      widthBand.setRadius(Math.max(18, Math.round(widthFt * 1.8)));
     }
   }
 
@@ -520,7 +521,7 @@ const mapApp = (() => {
     if (newVal === currentWidthFt) return;
     currentWidthFt = newVal;
     document.getElementById('width-val').textContent = `${newVal} ft`;
-    if (widthBand) widthBand.setRadius(newVal * 0.3048 / 2);
+    if (widthBand) widthBand.setRadius(Math.max(18, Math.round(newVal * 1.8)));
     fetch('/api/settings', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
