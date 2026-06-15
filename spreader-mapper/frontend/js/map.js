@@ -521,7 +521,9 @@ const mapApp = (() => {
     if (newVal === currentWidthFt) return;
     currentWidthFt = newVal;
     document.getElementById('width-val').textContent = `${newVal} ft`;
-    if (widthBand) widthBand.setRadius(Math.max(18, Math.round(newVal * 1.8)));
+    const px = Math.max(18, Math.round(newVal * 1.8));
+    console.log(`adjustWidth: ${newVal}ft → ${px}px ring, widthBand=${widthBand ? 'exists' : 'null'}`);
+    if (widthBand) widthBand.setRadius(px);
     fetch('/api/settings', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },

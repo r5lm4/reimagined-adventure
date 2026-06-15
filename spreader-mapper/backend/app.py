@@ -245,7 +245,9 @@ def index():
 
 @app.route("/static/js/<path:filename>")
 def static_js(filename):
-    return send_from_directory(str(FRONTEND_DIR / "js"), filename)
+    resp = send_from_directory(str(FRONTEND_DIR / "js"), filename)
+    resp.headers["Cache-Control"] = "no-store"
+    return resp
 
 
 @app.route("/static/css/<path:filename>")
