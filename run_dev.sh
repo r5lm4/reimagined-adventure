@@ -83,7 +83,7 @@ echo ""
 cd "$BACKEND"
 export SIM_GPS=1
 export SIM_LAT="${SIM_LAT:-30.4515}"
-export SIM_LON="${SIM_LON:-91.1871}"
+export SIM_LON="${SIM_LON:--91.1871}"
 export FLASK_ENV=development
 
 $PYTHON app.py

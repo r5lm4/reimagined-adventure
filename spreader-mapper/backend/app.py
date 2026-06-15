@@ -157,8 +157,13 @@ def _background_loop():
             sess.spread_width_ft = width_ft  # keep session in sync with current UI value
             result = sess.add_fix(fix, spreading)
             with _state_lock:
-                _last_swath_geojson = result.get("new_swath_geojson")
+                new_swath = result.get("new_swath_geojson")
+                if new_swath is not None:
+                    _last_swath_geojson = new_swath
                 _last_overlap_fraction = result.get("overlap_fraction", 0.0)
+        elif sess is None:
+            with _state_lock:
+                _last_swath_geojson = None
 
         # Build and emit state
         state = _build_state(fix)

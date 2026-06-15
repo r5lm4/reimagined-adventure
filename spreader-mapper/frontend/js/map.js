@@ -258,11 +258,10 @@ const mapApp = (() => {
 
     currentSwathLayer = L.geoJSON(geojson, {
       style: {
-        fillColor: '#a5d6a7',
-        fillOpacity: 0.2,
-        color: '#a5d6a7',
-        weight: 1,
-        dashArray: '4 2',
+        fillColor: '#ffeb3b',
+        fillOpacity: 0.55,
+        color: '#f57f17',
+        weight: 2,
       },
     }).addTo(map);
   }
