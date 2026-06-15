@@ -17,6 +17,7 @@ const mapApp = (() => {
   // Layers
   let positionMarker = null;
   let positionRing = null;
+  let widthBand = null;
   let coverageLayer = null;
   let trackPolyline = null;
   let currentSwathLayer = null;
@@ -157,6 +158,22 @@ const mapApp = (() => {
     }
 
     const latlng = [pos.lat, pos.lon];
+
+    // Width band — circle showing current spread width (radius = half width)
+    const bandRadiusM = currentWidthFt * 0.3048 / 2;
+    if (widthBand) {
+      widthBand.setLatLng(latlng);
+      widthBand.setRadius(bandRadiusM);
+    } else {
+      widthBand = L.circle(latlng, {
+        radius: bandRadiusM,
+        fillColor: '#ffeb3b',
+        fillOpacity: 0.35,
+        color: '#f57f17',
+        weight: 2,
+        interactive: false,
+      }).addTo(map);
+    }
 
     // Position marker
     if (positionMarker) {
@@ -397,6 +414,9 @@ const mapApp = (() => {
   function updateSettings(widthFt, spacingFt) {
     document.getElementById('width-val').textContent = `${widthFt} ft`;
     document.getElementById('spacing-val').textContent = `${spacingFt} ft`;
+    if (widthBand) {
+      widthBand.setRadius(widthFt * 0.3048 / 2);
+    }
   }
 
   // -------------------------------------------------------------------------
@@ -500,6 +520,7 @@ const mapApp = (() => {
     if (newVal === currentWidthFt) return;
     currentWidthFt = newVal;
     document.getElementById('width-val').textContent = `${newVal} ft`;
+    if (widthBand) widthBand.setRadius(newVal * 0.3048 / 2);
     fetch('/api/settings', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
