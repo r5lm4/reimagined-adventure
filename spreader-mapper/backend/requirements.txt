@@ -4,3 +4,6 @@ pyserial>=3.5
 shapely>=2.0
 pyproj>=3.6
 requests>=2.31
+# gpsd-py3 is used on the Raspberry Pi to read fixes from the gpsd daemon.
+# Optional on desktops (sim mode / direct serial work without it).
+gpsd-py3>=0.3.0

@@ -117,6 +117,70 @@ def _sim_loop(start_lat: float, start_lon: float) -> None:
         time.sleep(fix_interval)
 
 
+def _gpsd_loop() -> None:
+    """
+    Read fixes from a running gpsd daemon via the gpsd-py3 library.
+
+    This is the preferred source on the Raspberry Pi, where gpsd owns
+    /dev/serial0. gpsd handles all NMEA parsing and serial reconnection,
+    so we just poll get_current() once per second.
+    """
+    global _running
+    import gpsd
+
+    while _running:
+        try:
+            gpsd.connect()
+            logger.info("GPS: connected to gpsd")
+            while _running:
+                try:
+                    packet = gpsd.get_current()
+                except Exception as e:
+                    logger.warning(f"GPS: gpsd read error: {e}")
+                    time.sleep(1.0)
+                    continue
+
+                mode = getattr(packet, "mode", 0)  # 0/1 = no fix, 2 = 2D, 3 = 3D
+                sats = getattr(packet, "sats", 0)
+
+                if mode >= 2 and packet.lat is not None and packet.lon is not None:
+                    try:
+                        speed_mps = packet.hspeed
+                    except Exception:
+                        speed_mps = 0.0
+                    # hdop isn't always exposed on the TPV packet; fall back gracefully
+                    hdop = getattr(packet, "hdop", None)
+                    if not hdop:
+                        try:
+                            err = getattr(packet, "error", {}) or {}
+                            xy = max(err.get("x", 0.0), err.get("y", 0.0))
+                            hdop = round(xy / 5.0, 2) if xy else 1.0
+                        except Exception:
+                            hdop = 1.0
+                    update = {
+                        "valid": True,
+                        "lat": round(packet.lat, 7),
+                        "lon": round(packet.lon, 7),
+                        "speed_kmh": round((speed_mps or 0.0) * 3.6, 2),
+                        "timestamp": getattr(packet, "time", None),
+                        "fix_quality": 2 if mode >= 3 else 1,
+                        "satellites": sats,
+                        "hdop": hdop,
+                        "altitude_m": round(getattr(packet, "alt", 0.0) or 0.0, 1) if mode >= 3 else 0.0,
+                    }
+                else:
+                    update = {"valid": False, "satellites": sats}
+
+                with _lock:
+                    _current_fix.update(update)
+
+                time.sleep(1.0)
+        except Exception as e:
+            logger.warning(f"GPS: gpsd connection failed: {e}. Retrying in 5s...")
+            if _running:
+                time.sleep(5)
+
+
 # ---------------------------------------------------------------------------
 # NMEA parsing
 # ---------------------------------------------------------------------------
@@ -273,11 +337,35 @@ def _reader_loop(port: str, baud: int) -> None:
 # Public API
 # ---------------------------------------------------------------------------
 
+def _select_source() -> str:
+    """
+    Decide which GPS source to use.
+
+    Priority:
+      1. SIM_GPS=1                      → "sim"
+      2. GPS_SOURCE env (sim/gpsd/serial) → explicit override
+      3. gpsd library importable        → "gpsd"  (default on the Pi)
+      4. otherwise                      → "serial"
+    """
+    if os.environ.get("SIM_GPS", "0") == "1":
+        return "sim"
+    override = os.environ.get("GPS_SOURCE", "").strip().lower()
+    if override in ("sim", "gpsd", "serial"):
+        return override
+    try:
+        import gpsd  # noqa: F401
+        return "gpsd"
+    except Exception:
+        return "serial"
+
+
 def start(port: str = "/dev/serial0", baud: int = 9600) -> None:
     """
     Start the GPS background thread.
-    If SIM_GPS=1 is set in the environment, runs the simulator instead of
-    reading a serial port, so the app can be tested on any computer.
+
+    Source is auto-selected (see _select_source): the simulator when
+    SIM_GPS=1, gpsd when the gpsd-py3 library is available (the Pi),
+    or direct serial NMEA reading as a fallback. Override with GPS_SOURCE.
     """
     global _running, _thread
     if _thread and _thread.is_alive():
@@ -285,7 +373,9 @@ def start(port: str = "/dev/serial0", baud: int = 9600) -> None:
         return
     _running = True
 
-    if os.environ.get("SIM_GPS", "0") == "1":
+    source = _select_source()
+
+    if source == "sim":
         sim_lat = float(os.environ.get("SIM_LAT", "30.4515"))
         sim_lon = float(os.environ.get("SIM_LON", "-91.1871"))
         _thread = threading.Thread(
@@ -293,11 +383,17 @@ def start(port: str = "/dev/serial0", baud: int = 9600) -> None:
             daemon=True, name="gps-sim"
         )
         logger.info(f"GPS: simulation mode ON — centre {sim_lat}, {sim_lon}")
+    elif source == "gpsd":
+        _thread = threading.Thread(
+            target=_gpsd_loop, daemon=True, name="gps-gpsd"
+        )
+        logger.info("GPS: source = gpsd")
     else:
         _thread = threading.Thread(
             target=_reader_loop, args=(port, baud),
             daemon=True, name="gps-reader"
         )
+        logger.info(f"GPS: source = serial ({port} @ {baud})")
 
     _thread.start()
 
