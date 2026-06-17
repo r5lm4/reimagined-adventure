@@ -23,9 +23,15 @@ from geometry import (
     clip_to_boundary,
     polygon_area_sqft,
     shape_to_geojson,
+    clean_coverage,
+    distance_m,
 )
 
 logger = logging.getLogger(__name__)
+
+# Minimum ground movement (metres) between two spreading fixes before we draw
+# a new swath segment. Filters out GPS jitter while standing still / very slow.
+MIN_MOVE_M = 0.5
 
 
 class Session:
@@ -148,41 +154,50 @@ class Session:
         if spreading:
             self.spreading_fixes += 1
 
-            if self.prev_spreading_fix is not None:
-                # Build swath from previous spreading fix to current fix
+            if self.prev_spreading_fix is None:
+                # First spreading fix — set the anchor, nothing to draw yet
+                self.prev_spreading_fix = fix_dict
+            else:
                 prev = self.prev_spreading_fix
                 curr = fix_dict
-                coords = [
-                    (prev["lon"], prev["lat"]),
-                    (curr["lon"], curr["lat"]),
-                ]
-                width_m = feet_to_meters(self.spread_width_ft)
-                new_swath_poly = buffer_track(coords, width_m)
+                moved = distance_m(prev["lon"], prev["lat"], curr["lon"], curr["lat"])
 
-                if new_swath_poly is not None and not new_swath_poly.is_empty:
-                    # Check overlap before unioning
-                    overlap_fraction = compute_overlap_fraction(
-                        new_swath_poly, self.covered_union
-                    )
-                    if overlap_fraction > 0.05:
-                        self.overlap_detected = True
+                if moved < MIN_MOVE_M:
+                    # Too little movement — likely GPS jitter. Keep the anchor
+                    # so we measure from the last real position, draw nothing.
+                    pass
+                else:
+                    coords = [
+                        (prev["lon"], prev["lat"]),
+                        (curr["lon"], curr["lat"]),
+                    ]
+                    width_m = feet_to_meters(self.spread_width_ft)
+                    new_swath_poly = buffer_track(coords, width_m)
 
-                    # Clip to boundary if available
-                    clipped = clip_to_boundary(new_swath_poly, self.boundary_poly)
+                    if new_swath_poly is not None and not new_swath_poly.is_empty:
+                        # Check overlap before unioning
+                        overlap_fraction = compute_overlap_fraction(
+                            new_swath_poly, self.covered_union
+                        )
+                        if overlap_fraction > 0.05:
+                            self.overlap_detected = True
 
-                    # Union into covered area
-                    if self.covered_union is None:
-                        self.covered_union = clipped
-                    else:
-                        try:
-                            self.covered_union = unary_union(
-                                [self.covered_union, clipped]
-                            )
-                        except Exception as e:
-                            logger.warning(f"session: union failed: {e}")
+                        # Clip to boundary if available
+                        clipped = clip_to_boundary(new_swath_poly, self.boundary_poly)
 
-            # Update previous spreading fix
-            self.prev_spreading_fix = fix_dict
+                        # Union into covered area
+                        if self.covered_union is None:
+                            self.covered_union = clipped
+                        else:
+                            try:
+                                self.covered_union = unary_union(
+                                    [self.covered_union, clipped]
+                                )
+                            except Exception as e:
+                                logger.warning(f"session: union failed: {e}")
+
+                    # Advance the anchor only when we actually moved
+                    self.prev_spreading_fix = fix_dict
         else:
             # Gap in spreading resets continuity
             self.prev_spreading_fix = None
@@ -235,7 +250,8 @@ class Session:
         if self.covered_union is None or self.covered_union.is_empty:
             return None
         try:
-            simplified = self.covered_union.simplify(0.00001)
+            cleaned = clean_coverage(self.covered_union)
+            simplified = cleaned.simplify(0.000005)
             return {
                 "type": "Feature",
                 "geometry": mapping(simplified),

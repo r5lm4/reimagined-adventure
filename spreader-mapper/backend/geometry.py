@@ -95,6 +95,61 @@ def buffer_track(coords_wgs84: list, width_m: float) -> Optional[Polygon]:
 
 
 # ---------------------------------------------------------------------------
+# Coverage cleanup (remove GPS-jitter slivers and pinholes)
+# ---------------------------------------------------------------------------
+
+def distance_m(lon1: float, lat1: float, lon2: float, lat2: float) -> float:
+    """Approximate ground distance in metres between two WGS84 points."""
+    m_per_deg_lat = 111_320.0
+    m_per_deg_lon = 111_320.0 * math.cos(math.radians((lat1 + lat2) / 2.0))
+    dx = (lon2 - lon1) * m_per_deg_lon
+    dy = (lat2 - lat1) * m_per_deg_lat
+    return math.hypot(dx, dy)
+
+
+def _drop_small_holes(geom, min_area_m2: float):
+    """Remove interior rings (holes) smaller than min_area_m2. Geom is in UTM."""
+    def _clean(p):
+        if not p.interiors:
+            return p
+        keep = [r for r in p.interiors if Polygon(r).area >= min_area_m2]
+        return Polygon(p.exterior, keep)
+
+    if geom.geom_type == "Polygon":
+        return _clean(geom)
+    if geom.geom_type == "MultiPolygon":
+        return MultiPolygon([_clean(p) for p in geom.geoms])
+    return geom
+
+
+def clean_coverage(poly_wgs84, hole_min_m2: float = 1.0, close_m: float = 0.4):
+    """
+    Tidy a coverage polygon for display/export.
+
+    Projects to UTM, fixes invalid geometry, applies a morphological closing
+    (dilate then erode) to merge slivers and fill pinhole gaps from GPS
+    jitter, drops small interior holes, then returns WGS84.
+    """
+    if poly_wgs84 is None or poly_wgs84.is_empty:
+        return poly_wgs84
+    try:
+        b = poly_wgs84.bounds
+        to_utm, to_wgs84 = get_utm_transformers((b[1] + b[3]) / 2, (b[0] + b[2]) / 2)
+        utm = transform(to_utm.transform, poly_wgs84)
+        if not utm.is_valid:
+            utm = utm.buffer(0)
+        if close_m > 0:
+            utm = utm.buffer(close_m).buffer(-close_m)
+        utm = _drop_small_holes(utm, hole_min_m2)
+        if utm.is_empty:
+            return poly_wgs84
+        return transform(to_wgs84.transform, utm)
+    except Exception as e:
+        logger.warning(f"geometry: clean_coverage failed: {e}")
+        return poly_wgs84
+
+
+# ---------------------------------------------------------------------------
 # Overlap detection
 # ---------------------------------------------------------------------------
 
