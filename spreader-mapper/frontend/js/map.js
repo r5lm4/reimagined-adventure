@@ -51,6 +51,28 @@ const mapApp = (() => {
     initSocket();
     startDurationTimer();
     loadBoundary();
+    // Immediate first paint + REST fallback in case websockets don't work
+    fetchStateOnce();
+    startFallbackPolling();
+  }
+
+  let lastSocketTs = 0;
+
+  function fetchStateOnce() {
+    fetch('/api/state')
+      .then(r => r.json())
+      .then(handleState)
+      .catch(() => {});
+  }
+
+  function startFallbackPolling() {
+    // If the websocket isn't delivering state (common on iOS Safari or with
+    // the threading dev server), poll the REST API every second instead.
+    setInterval(() => {
+      if (Date.now() - lastSocketTs > 3000) {
+        fetchStateOnce();
+      }
+    }, 1000);
   }
 
   function initMap() {
@@ -75,8 +97,9 @@ const mapApp = (() => {
   }
 
   function initSocket() {
+    // Default transports (polling, upgrading to websocket) — forcing
+    // websocket-only breaks on iOS Safari / the threading dev server.
     socket = io({
-      transports: ['websocket'],
       reconnectionDelay: 1000,
       reconnectionAttempts: Infinity,
     });
@@ -89,7 +112,10 @@ const mapApp = (() => {
       console.log('Socket disconnected');
     });
 
-    socket.on('state', handleState);
+    socket.on('state', (s) => {
+      lastSocketTs = Date.now();
+      handleState(s);
+    });
   }
 
   // -------------------------------------------------------------------------
