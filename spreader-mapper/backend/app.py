@@ -61,22 +61,31 @@ socketio = SocketIO(app, cors_allowed_origins="*", async_mode="threading")
 # ---------------------------------------------------------------------------
 # GPIO (optional, non-Pi environments skip gracefully)
 # ---------------------------------------------------------------------------
-GPIO_AVAILABLE = False
-try:
-    import RPi.GPIO as GPIO
+# Gate sensor can be disabled with GATE_SENSOR=0 (e.g. before the physical
+# switch is wired) so the on-screen SPREADING button controls spreading
+# instead of a floating GPIO pin overriding it.
+GATE_SENSOR_ENABLED = os.environ.get("GATE_SENSOR", "1") == "1"
+GATE_GPIO = int(os.environ.get("GATE_GPIO", "17"))
 
-    GPIO.setmode(GPIO.BCM)
-    # GPIO 17: gate/spreading sensor (Joinfworld IP67 roller lever switch)
-    #   Wire: switch COM → GPIO 17 (Pin 11), switch NO → GND (Pin 14), NC unused.
-    #   Internal pullup keeps pin HIGH when gate is closed (lever not pressed).
-    #   When spreader gate opens the lever is pressed, NO closes → pin goes LOW → spreading ON.
-    #   Gate closes → lever releases → pin HIGH → spreading OFF. Fully automatic.
-    # All other settings (width, spacing, start/stop) are controlled from the iPhone app.
-    GPIO.setup(17, GPIO.IN, pull_up_down=GPIO.PUD_UP)
-    GPIO_AVAILABLE = True
-    logger.info("GPIO: initialized (gate sensor on GPIO 17)")
-except Exception as _gpio_err:
-    logger.info(f"GPIO: not available ({_gpio_err}), spreading controlled from app only")
+GPIO_AVAILABLE = False
+if not GATE_SENSOR_ENABLED:
+    logger.info("GPIO: gate sensor disabled (GATE_SENSOR=0), spreading controlled from app")
+else:
+    try:
+        import RPi.GPIO as GPIO
+
+        GPIO.setmode(GPIO.BCM)
+        # Gate/spreading sensor (Joinfworld IP67 roller lever switch)
+        #   Wire: switch COM → GATE_GPIO (default Pin 11/GPIO17), NO → GND, NC unused.
+        #   Internal pullup keeps pin HIGH when gate is closed (lever not pressed).
+        #   When spreader gate opens the lever is pressed, NO closes → pin LOW → spreading ON.
+        #   Gate closes → lever releases → pin HIGH → spreading OFF. Fully automatic.
+        # All other settings (width, spacing, start/stop) are controlled from the iPhone app.
+        GPIO.setup(GATE_GPIO, GPIO.IN, pull_up_down=GPIO.PUD_UP)
+        GPIO_AVAILABLE = True
+        logger.info(f"GPIO: initialized (gate sensor on GPIO {GATE_GPIO})")
+    except Exception as _gpio_err:
+        logger.info(f"GPIO: not available ({_gpio_err}), spreading controlled from app only")
 
 # ---------------------------------------------------------------------------
 # Application state
@@ -134,10 +143,10 @@ def _background_loop():
             try:
                 import RPi.GPIO as GPIO
 
-                # Gate sensor (GPIO 17) — level based.
+                # Gate sensor — level based.
                 # LOW = lever pressed = gate open = spreading ON.
                 # HIGH = lever released = gate closed = spreading OFF.
-                gate_open = not GPIO.input(17)
+                gate_open = not GPIO.input(GATE_GPIO)
                 with _state_lock:
                     if gate_open != _spreading:
                         _spreading = gate_open
